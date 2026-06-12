@@ -2,7 +2,7 @@
 
 Simulação interativa do sistema de Saturno que roda inteiramente no navegador, em um único arquivo HTML. Todos os 10 corpos (Saturno + 9 luas) se atraem mutuamente pela **Lei da Gravitação Universal de Newton**, e as órbitas evoluem em tempo real a partir de dados astronômicos reais (JPL/NASA).
 
-**▶ Acesse a simulação:** https://SEU_USUARIO.github.io/saturno/
+**▶ Acesse a simulação:** https://guilhermedrummondcouto.github.io/saturno/
 
 > Substitua `SEU_USUARIO` acima pelo seu nome de usuário do GitHub depois de publicar.
 
