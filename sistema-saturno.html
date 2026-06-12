@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Sistema de Saturno — Simulação Gravitacional N-Corpos</title>
+<style>
+:root{
+  --bg:#04060c; --panel:rgba(11,15,25,.84); --line:rgba(255,255,255,.09);
+  --txt:#dfe5ee; --dim:#8b95a8; --acc:#e8b35a; --acc-soft:rgba(232,179,90,.16);
+  --mono:ui-monospace,'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--txt);
+  font:14px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+sup{font-size:9px}
+
+/* ---- rótulos sobre os corpos ---- */
+#labels{position:fixed;inset:0;pointer-events:none;z-index:5;overflow:hidden}
+.label{position:absolute;transform:translate(-50%,-150%);font-size:11px;letter-spacing:.08em;
+  color:#c9d3e2;text-shadow:0 1px 4px #000,0 0 10px rgba(0,0,0,.95);
+  pointer-events:auto;cursor:pointer;user-select:none;white-space:nowrap;padding:2px 5px}
+.label:hover{color:#fff}
+.label.sel{color:var(--acc)}
+.label .dot,#list .dot{display:inline-block;width:7px;height:7px;border-radius:50%;
+  margin-right:6px;vertical-align:0;box-shadow:0 0 6px currentColor}
+
+/* ---- HUD (tempo / energia) ---- */
+#hud{position:fixed;top:14px;right:16px;z-index:10;text-align:right;pointer-events:none;
+  font-family:var(--mono);font-size:12px;color:var(--dim);
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:8px 12px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#hud b{color:var(--txt);font-weight:600}
+
+/* ---- painel lateral ---- */
+#panel{position:fixed;top:14px;left:14px;z-index:10;width:272px;
+  max-height:calc(100% - 28px);overflow-y:auto;overscroll-behavior:contain;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  padding:14px 14px 12px;scrollbar-width:thin}
+h1{font-size:14.5px;font-weight:650;letter-spacing:.02em;color:#f0e6cf}
+h1 span{color:var(--acc)}
+.sub{font-size:10.5px;color:var(--dim);letter-spacing:.14em;text-transform:uppercase;margin:3px 0 12px}
+.row{display:flex;gap:8px;margin-bottom:10px}
+button{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--txt);
+  border-radius:8px;padding:7px 8px;font-size:12.5px;cursor:pointer;font-family:inherit;
+  transition:background .15s,border-color .15s}
+button:hover{background:rgba(255,255,255,.12)}
+button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+button.primary{background:var(--acc-soft);border-color:rgba(232,179,90,.45);color:#f3d9a6}
+button.primary:hover{background:rgba(232,179,90,.28)}
+.ctl{margin:11px 0}
+.ctl label{display:flex;justify-content:space-between;align-items:baseline;font-size:10.5px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:5px}
+.ctl label output{color:var(--txt);font-family:var(--mono);text-transform:none;letter-spacing:0;font-size:12px}
+input[type=range]{width:100%;accent-color:var(--acc);cursor:pointer}
+.toggles{display:flex;flex-wrap:wrap;gap:6px 14px;margin:10px 0 2px}
+.toggles label{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--txt);cursor:pointer}
+input[type=checkbox]{accent-color:var(--acc)}
+hr{border:0;border-top:1px solid var(--line);margin:12px 0}
+.foot{font-size:10px;color:var(--dim);letter-spacing:.04em;margin-top:9px;line-height:1.5}
+
+/* ---- lista de corpos ---- */
+#list .item{display:flex;align-items:center;gap:4px;padding:5px 6px;border-radius:8px;
+  cursor:pointer;font-size:13px}
+#list .item:hover{background:rgba(255,255,255,.05)}
+#list .item.sel{background:var(--acc-soft)}
+#list .dot{flex:none;margin-right:4px}
+#list .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#list .per{font-family:var(--mono);font-size:10.5px;color:var(--dim);margin-right:2px}
+#list .fw{flex:none;width:26px;height:22px;padding:0;font-size:13px;line-height:1;
+  background:transparent;border:1px solid transparent;color:#5d6678}
+#list .fw:hover{border-color:var(--line);color:var(--txt);background:transparent}
+#list .fw.on{color:var(--acc)}
+
+/* ---- cartão de informações ---- */
+#infocard{position:fixed;right:16px;bottom:16px;z-index:10;width:302px;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:14px}
+#infocard.hidden{display:none}
+#infocard h2{font-size:15px;font-weight:650}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12px;margin-top:10px}
+.kv span{color:var(--dim)}
+.kv b{font-family:var(--mono);font-weight:500;text-align:right;color:var(--txt)}
+
+/* ---- dica de navegação ---- */
+#hint{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--dim);
+  background:rgba(8,10,16,.6);padding:5px 13px;border-radius:99px;z-index:9;pointer-events:none;
+  letter-spacing:.02em;white-space:nowrap;transition:opacity 1.2s}
+
+#panelToggle{display:none}
+
+@media(max-width:760px){
+  #panel{transform:translateX(-112%);transition:transform .25s;width:262px}
+  #panel.open{transform:none}
+  #panelToggle{display:block;position:fixed;top:12px;left:12px;z-index:11;width:42px;height:38px;
+    flex:none;font-size:17px;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    color:var(--txt);backdrop-filter:blur(8px)}
+  #hint{display:none}
+  #infocard{left:12px;right:12px;width:auto;bottom:12px}
+  #hud{top:12px;right:12px;font-size:11px;padding:6px 9px}
+}
+@media(prefers-reduced-motion:reduce){
+  #panel,#hint{transition:none}
+}
+</style>
+</head>
+<body>
+<div id="labels"></div>
+
+<header id="hud">
+  <div><b id="hTime">T+ 0 horas</b> · <span id="hSpeed">—</span></div>
+  <div id="hStats">ΔE 0% · — fps</div>
+</header>
+
+<aside id="panel">
+  <h1>Sistema de <span>Saturno</span></h1>
+  <div class="sub">Gravitação newtoniana · N-corpos</div>
+  <div class="row">
+    <button id="btnPause" class="primary">⏸ Pausar</button>
+    <button id="btnView">Visão geral</button>
+  </div>
+  <div class="ctl">
+    <label>Velocidade do tempo <output id="oSpeed">—</output></label>
+    <input type="range" id="rSpeed" min="0" max="100" step="0.1" value="55" aria-label="Velocidade da simulação">
+  </div>
+  <div class="ctl">
+    <label>Tamanho das luas <output id="oScale">×10</output></label>
+    <input type="range" id="rScale" min="1" max="40" step="0.5" value="10" aria-label="Escala visual das luas">
+  </div>
+  <div class="toggles">
+    <label><input type="checkbox" id="cbTrail" checked> Trilhas</label>
+    <label><input type="checkbox" id="cbOrbit" checked> Órbitas</label>
+    <label><input type="checkbox" id="cbLabel" checked> Rótulos</label>
+  </div>
+  <hr>
+  <div id="list"></div>
+  <hr>
+  <button id="btnReset" style="width:100%">Reiniciar simulação</button>
+  <div class="foot">Distâncias em escala real (1 un = 1.000 km) · massas pontuais ·
+    integrador leapfrog simplético, Δt = 60 s · dados orbitais JPL/NASA (aproximados)</div>
+</aside>
+
+<div id="infocard" class="hidden">
+  <div style="display:flex;align-items:center;gap:9px">
+    <span id="icDot" style="width:10px;height:10px;border-radius:50%;flex:none;box-shadow:0 0 8px currentColor"></span>
+    <h2 id="icName" style="flex:1"></h2>
+    <button id="icClose" style="flex:none;width:26px;padding:2px 0" aria-label="Fechar">×</button>
+  </div>
+  <div id="icType" class="sub" style="margin:3px 0 0"></div>
+  <div class="kv" id="icKv"></div>
+  <div class="row" style="margin:12px 0 0">
+    <button id="icFollow" class="primary">Seguir</button>
+    <button id="icFocus">Focar</button>
+  </div>
+</div>
+
+<div id="hint">arraste · orbitar&ensp;|&ensp;rolagem · zoom&ensp;|&ensp;botão direito · mover&ensp;|&ensp;clique · selecionar&ensp;|&ensp;2× clique · seguir&ensp;|&ensp;espaço · pausar</div>
+<button id="panelToggle" aria-label="Abrir painel">☰</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script id="sim">
+'use strict';
+if(typeof THREE==='undefined'){
+  document.body.innerHTML='<div style="padding:40px;font-family:system-ui;color:#dfe5ee">Não foi possível carregar a biblioteca Three.js (cdnjs). Verifique a conexão e recarregue a página.</div>';
+  throw new Error('THREE ausente');
+}
+
+/* ==================== Utilidades ==================== */
+const TAU=Math.PI*2, DEG=Math.PI/180;
+const fmtBR=(n,d=0)=>n.toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
+const SUPMAP={'-':'⁻','0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'};
+const supTxt=e=>String(e).split('').map(c=>SUPMAP[c]||'').join('');
+function fmtExp(n,u){if(n===0)return '0 '+u;const e=Math.floor(Math.log10(Math.abs(n)));return fmtBR(n/Math.pow(10,e),2)+' × 10<sup>'+e+'</sup> '+u;}
+function fmtSci(n){if(!isFinite(n)||n===0)return '0';const e=Math.floor(Math.log10(Math.abs(n)));return fmtBR(n/Math.pow(10,e),1)+'×10'+supTxt(e);}
+function fmtKm(n){if(n>=1e6)return fmtBR(n/1e6,2)+' mi km';if(n>=1e4)return fmtBR(n/1e3,0)+' mil km';return fmtBR(n,0)+' km';}
+function fmtTime(s){const d=s/86400;if(d<2)return fmtBR(s/3600,1)+' horas';if(d<365.25)return fmtBR(d,1)+' dias';return fmtBR(d/365.25,2)+' anos';}
+function fmtRate(r){const d=r/86400;if(d>=1)return fmtBR(d,1)+' dias/s';const h=r/3600;if(h>=1)return fmtBR(h,1)+' h/s';return fmtBR(r/60,0)+' min/s';}
+
+/* ==================== Dados astronômicos ====================
+   Unidades físicas: km, kg, s.  Fontes: JPL/NASA (valores aproximados).
+   Elementos orbitais relativos ao plano equatorial de Saturno.       */
+const G=6.6743e-20;      // km³ kg⁻¹ s⁻²
+const SCALE=1e-3;        // 1 unidade de cena = 1.000 km
+const BODIES=[
+ {name:'Saturno',  type:'Planeta gigante gasoso',        mass:5.6834e26, radius:58232,  color:'#e7c884'},
+ {name:'Mimas',    type:'Lua regular',                   mass:3.7493e19, radius:198.2,  a:185539,   e:0.0196, i:1.574,  O:120, w:60,  nu:20,  color:'#b9b4ac'},
+ {name:'Encélado', type:'Lua regular · gêiseres ativos', mass:1.0802e20, radius:252.1,  a:237948,   e:0.0047, i:0.009,  O:40,  w:120, nu:210, color:'#eef3f6'},
+ {name:'Tétis',    type:'Lua regular',                   mass:6.1745e20, radius:531.1,  a:294619,   e:0.0001, i:1.091,  O:200, w:0,   nu:300, color:'#ccd0d2'},
+ {name:'Dione',    type:'Lua regular',                   mass:1.0955e21, radius:561.4,  a:377396,   e:0.0022, i:0.028,  O:80,  w:200, nu:95,  color:'#c6c1b8'},
+ {name:'Reia',     type:'Lua regular',                   mass:2.3065e21, radius:763.8,  a:527108,   e:0.0010, i:0.331,  O:300, w:90,  nu:160, color:'#b8b2a7'},
+ {name:'Titã',     type:'Lua regular · atmosfera densa', mass:1.3452e23, radius:2574.7, a:1221870,  e:0.0288, i:0.348,  O:25,  w:185, nu:330, color:'#d99a47'},
+ {name:'Hipérion', type:'Lua · rotação caótica',         mass:5.62e18,   radius:135,    a:1481010,  e:0.1230, i:0.430,  O:150, w:280, nu:70,  color:'#9d8a72'},
+ {name:'Jápeto',   type:'Lua regular externa',           mass:1.8056e21, radius:734.5,  a:3560820,  e:0.0286, i:15.47,  O:260, w:50,  nu:200, color:'#8f8275'},
+ {name:'Febe',     type:'Lua irregular · retrógrada',    mass:8.292e18,  radius:106.5,  a:12952000, e:0.1635, i:173.0,  O:0,   w:340, nu:45,  color:'#85827d'},
+];
+const N=BODIES.length;
+
+/* ==================== Estado físico ==================== */
+const P={
+  x:new Float64Array(N), y:new Float64Array(N), z:new Float64Array(N),
+  vx:new Float64Array(N),vy:new Float64Array(N),vz:new Float64Array(N),
+  ax:new Float64Array(N),ay:new Float64Array(N),az:new Float64Array(N),
+  m:new Float64Array(N)
+};
+let simTime=0, E0=1;
+
+/* Elementos orbitais (a,e,i,Ω,ω,ν) → vetor de estado cartesiano.
+   Plano orbital de referência = plano xz do mundo; +y = norte.    */
+function elementsToState(mu,a,e,i,O,w,nu){
+  i*=DEG;O*=DEG;w*=DEG;nu*=DEG;
+  const p=a*(1-e*e), r=p/(1+e*Math.cos(nu)), h=Math.sqrt(mu*p);
+  const xp=r*Math.cos(nu), yp=r*Math.sin(nu);            // perifocal
+  const vxp=-(mu/h)*Math.sin(nu), vyp=(mu/h)*(e+Math.cos(nu));
+  const cO=Math.cos(O),sO=Math.sin(O),ci=Math.cos(i),si=Math.sin(i),cw=Math.cos(w),sw=Math.sin(w);
+  const R11=cO*cw-sO*sw*ci, R12=-cO*sw-sO*cw*ci;          // Rz(Ω)·Rx(i)·Rz(ω)
+  const R21=sO*cw+cO*sw*ci, R22=-sO*sw+cO*cw*ci;
+  const R31=sw*si,          R32=cw*si;
+  const X=R11*xp+R12*yp,  Y=R21*xp+R22*yp,  Z=R31*xp+R32*yp;
+  const VX=R11*vxp+R12*vyp,VY=R21*vxp+R22*vyp,VZ=R31*vxp+R32*vyp;
+  return {x:X, y:Z, z:-Y, vx:VX, vy:VZ, vz:-VY};
+}
+
+function computeAccel(){
+  P.ax.fill(0);P.ay.fill(0);P.az.fill(0);
+  for(let i=0;i<N;i++){
+    const xi=P.x[i],yi=P.y[i],zi=P.z[i];
+    for(let j=i+1;j<N;j++){
+      const dx=P.x[j]-xi, dy=P.y[j]-yi, dz=P.z[j]-zi;
+      const r2=dx*dx+dy*dy+dz*dz, inv=G/(r2*Math.sqrt(r2));
+      const fi=inv*P.m[j], fj=inv*P.m[i];
+      P.ax[i]+=dx*fi; P.ay[i]+=dy*fi; P.az[i]+=dz*fi;
+      P.ax[j]-=dx*fj; P.ay[j]-=dy*fj; P.az[j]-=dz*fj;
+    }
+  }
+}
+
+/* Leapfrog kick–drift–kick: simplético → energia limitada, órbitas estáveis */
+function stepLeapfrog(dt){
+  const h=dt*0.5;
+  for(let k=0;k<N;k++){
+    P.vx[k]+=P.ax[k]*h; P.vy[k]+=P.ay[k]*h; P.vz[k]+=P.az[k]*h;
+    P.x[k]+=P.vx[k]*dt; P.y[k]+=P.vy[k]*dt; P.z[k]+=P.vz[k]*dt;
+  }
+  computeAccel();
+  for(let k=0;k<N;k++){P.vx[k]+=P.ax[k]*h; P.vy[k]+=P.ay[k]*h; P.vz[k]+=P.az[k]*h;}
+}
+
+function energy(){
+  let E=0;
+  for(let k=0;k<N;k++)E+=0.5*P.m[k]*(P.vx[k]*P.vx[k]+P.vy[k]*P.vy[k]+P.vz[k]*P.vz[k]);
+  for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
+    const dx=P.x[j]-P.x[i],dy=P.y[j]-P.y[i],dz=P.z[j]-P.z[i];
+    E-=G*P.m[i]*P.m[j]/Math.sqrt(dx*dx+dy*dy+dz*dz);
+  }
+  return E;
+}
+
+function initBodies(){
+  simTime=0;
+  for(let k=0;k<N;k++)P.m[k]=BODIES[k].mass;
+  P.x[0]=P.y[0]=P.z[0]=P.vx[0]=P.vy[0]=P.vz[0]=0;
+  for(let k=1;k<N;k++){
+    const b=BODIES[k], mu=G*(BODIES[0].mass+b.mass);
+    const s=elementsToState(mu,b.a,b.e,b.i,b.O,b.w,b.nu);
+    P.x[k]=s.x;P.y[k]=s.y;P.z[k]=s.z;P.vx[k]=s.vx;P.vy[k]=s.vy;P.vz[k]=s.vz;
+    b.period=TAU*Math.sqrt(b.a*b.a*b.a/mu);   // período kepleriano (s)
+  }
+  // referencial do baricentro: COM na origem, momento total nulo
+  let M=0,cx=0,cy=0,cz=0,px=0,py=0,pz=0;
+  for(let k=0;k<N;k++){M+=P.m[k];
+    cx+=P.m[k]*P.x[k]; cy+=P.m[k]*P.y[k]; cz+=P.m[k]*P.z[k];
+    px+=P.m[k]*P.vx[k];py+=P.m[k]*P.vy[k];pz+=P.m[k]*P.vz[k];}
+  for(let k=0;k<N;k++){
+    P.x[k]-=cx/M; P.y[k]-=cy/M; P.z[k]-=cz/M;
+    P.vx[k]-=px/M;P.vy[k]-=py/M;P.vz[k]-=pz/M;}
+  computeAccel();
+  E0=energy();
+}
+
+/* ==================== Renderizador e cena ==================== */
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.outputEncoding=THREE.sRGBEncoding;
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x03050a);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.5,400000);
+
+scene.add(new THREE.AmbientLight(0x46556e,0.30));
+const sunDir=new THREE.Vector3(1,0.34,0.52).normalize();
+const sun=new THREE.DirectionalLight(0xfff1da,1.5);
+sun.position.copy(sunDir).multiplyScalar(2200);
+sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-600; sun.shadow.camera.right=600;
+sun.shadow.camera.top=600;   sun.shadow.camera.bottom=-600;
+sun.shadow.camera.near=1500; sun.shadow.camera.far=2900;
+sun.shadow.bias=-2e-4; sun.shadow.normalBias=0.5;
+scene.add(sun); scene.add(sun.target);
+
+/* ==================== Texturas procedurais ==================== */
+function makeCanvas(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c;}
+
+function saturnTexture(){
+  const c=makeCanvas(1024,512),x=c.getContext('2d');
+  const g=x.createLinearGradient(0,0,0,512);
+  [[0,'#8f7d57'],[.06,'#a99464'],[.13,'#c2ab74'],[.20,'#d2ba81'],[.27,'#c8ae76'],
+   [.34,'#dcc48b'],[.42,'#e4cd96'],[.50,'#dac189'],[.57,'#e2ca93'],[.64,'#d0b57c'],
+   [.72,'#c3a771'],[.80,'#b29867'],[.88,'#9c885c'],[.95,'#857353'],[1,'#7a6a4e']]
+   .forEach(s=>g.addColorStop(s[0],s[1]));
+  x.fillStyle=g;x.fillRect(0,0,1024,512);
+  for(let i=0;i<46;i++){                                  // faixas latitudinais finas
+    const y=Math.random()*512,h=1+Math.random()*6;
+    x.fillStyle='rgba('+(Math.random()<.5?'255,244,214':'92,74,46')+','+(.03+Math.random()*.07)+')';
+    x.fillRect(0,y,1024,h);
+  }
+  for(let i=0;i<2600;i++){                                // turbulência longitudinal sutil
+    const y=Math.random()*512,w=30+Math.random()*160;
+    x.fillStyle='rgba('+(Math.random()<.5?'255,248,224':'80,64,40')+','+(.015+Math.random()*.03)+')';
+    x.fillRect(Math.random()*1024-80,y,w,1);
+  }
+  const gp=x.createLinearGradient(0,0,0,512);             // polos levemente escurecidos
+  gp.addColorStop(0,'rgba(60,70,90,.35)');gp.addColorStop(.12,'rgba(60,70,90,0)');
+  gp.addColorStop(.88,'rgba(50,45,35,0)');gp.addColorStop(1,'rgba(50,45,35,.4)');
+  x.fillStyle=gp;x.fillRect(0,0,1024,512);
+  const t=new THREE.CanvasTexture(c);
+  t.encoding=THREE.sRGBEncoding;
+  t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+
+/* Anéis: bandas radiais reais (D, C, B, divisão de Cassini, A, falha de Encke, F) */
+const RING_IN_KM=66900, RING_OUT_KM=140900;
+function ringTexture(){
+  const W=2048,c=makeCanvas(W,8),x=c.getContext('2d'),img=x.createImageData(W,8);
+  const bands=[ // [r0, r1, R, G, B, alfa]
+    [66900, 74510, 160,140,118,.07],   // anel D (muito tênue)
+    [74658, 92000, 168,146,120,.30],   // anel C
+    [92000,117580, 228,206,170,.92],   // anel B
+    [117580,122170,150,140,125,.05],   // divisão de Cassini
+    [122170,136775,205,184,150,.62],   // anel A
+    [140180,140680,202,206,216,.45]    // anel F
+  ];
+  const sm=t=>t*t*(3-2*t);
+  const rnd=[];for(let i=0;i<257;i++)rnd.push(Math.random());
+  const noise=u=>{const i=Math.floor(u),f=u-i;return rnd[i&255]*(1-sm(f))+rnd[(i+1)&255]*sm(f);};
+  for(let px=0;px<W;px++){
+    const r=RING_IN_KM+(RING_OUT_KM-RING_IN_KM)*px/(W-1);
+    let R=0,Gc=0,B=0,A=0;
+    for(const b of bands){
+      if(r>=b[0]&&r<=b[1]){
+        R=b[2];Gc=b[3];B=b[4];A=b[5];
+        const e0=Math.min(1,(r-b[0])/600), e1=Math.min(1,(b[1]-r)/600);
+        A*=sm(Math.min(e0,e1));
+      }
+    }
+    A*=Math.min(1,.6+.5*(noise(px*.07)*.6+noise(px*.6)*.4));   // estrutura fina
+    if(Math.abs(r-133589)<200)A*=.08;                          // falha de Encke
+    if(Math.abs(r-136480)<60) A*=.30;                          // falha de Keeler
+    const k=px*4;
+    for(let row=0;row<8;row++){
+      const o=row*W*4+k;
+      img.data[o]=R;img.data[o+1]=Gc;img.data[o+2]=B;
+      img.data[o+3]=Math.round(255*Math.max(0,Math.min(1,A)));
+    }
+  }
+  x.putImageData(img,0,0);
+  const t=new THREE.CanvasTexture(c);
+  t.encoding=THREE.sRGBEncoding;
+  t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+
+function moonTexture(base,opts){
+  opts=opts||{};
+  const c=makeCanvas(512,256),x=c.getContext('2d');
+  x.fillStyle=base;x.fillRect(0,0,512,256);
+  for(let i=0;i<14;i++){                                   // manchas de albedo
+    const r=20+Math.random()*60;
+    x.fillStyle=Math.random()<.5?'rgba(0,0,0,.05)':'rgba(255,255,255,.05)';
+    x.beginPath();x.arc(Math.random()*512,Math.random()*256,r,0,TAU);x.fill();
+  }
+  const sh=opts.shade||'rgba(0,0,0,.18)', hi=opts.light||'rgba(255,255,255,.12)';
+  const n=(opts.craters!=null)?opts.craters:160;
+  for(let i=0;i<n;i++){                                    // crateras
+    const r=1+Math.random()*5, px=Math.random()*512, py=Math.random()*256;
+    x.fillStyle=sh;x.beginPath();x.arc(px,py,r,0,TAU);x.fill();
+    x.fillStyle=hi;x.beginPath();x.arc(px-r*.3,py-r*.3,r*.55,0,TAU);x.fill();
+  }
+  if(opts.titan){                                          // neblina fotoquímica
+    const g=x.createLinearGradient(0,0,0,256);
+    g.addColorStop(0,'rgba(245,200,120,.35)');g.addColorStop(.5,'rgba(0,0,0,0)');
+    g.addColorStop(1,'rgba(140,90,40,.35)');
+    x.fillStyle=g;x.fillRect(0,0,512,256);
+  }
+  if(opts.tiger){                                          // "listras de tigre" do polo sul
+    x.strokeStyle='rgba(110,160,200,.4)';x.lineWidth=2;
+    for(let i=0;i<5;i++){
+      x.beginPath();x.moveTo(i*100+30,205+Math.random()*25);
+      x.quadraticCurveTo(i*100+80,235,i*100+140,205+Math.random()*25);x.stroke();
+    }
+  }
+  if(opts.twoTone){                                        // dicotomia de Jápeto
+    const g=x.createLinearGradient(0,0,512,0);
+    g.addColorStop(0,'rgba(40,28,18,.92)');g.addColorStop(.42,'rgba(40,28,18,.9)');
+    g.addColorStop(.55,'rgba(40,28,18,0)');
+    x.fillStyle=g;x.fillRect(0,0,512,256);
+  }
+  const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;return t;
+}
+
+function sunGlowTexture(){
+  const c=makeCanvas(128,128),x=c.getContext('2d');
+  const g=x.createRadialGradient(64,64,0,64,64,64);
+  g.addColorStop(0,'rgba(255,250,235,1)');g.addColorStop(.18,'rgba(255,238,200,.9)');
+  g.addColorStop(.45,'rgba(255,210,150,.25)');g.addColorStop(1,'rgba(255,200,140,0)');
+  x.fillStyle=g;x.fillRect(0,0,128,128);
+  const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;return t;
+}
+
+/* ==================== Campo de estrelas e Sol ==================== */
+(function(){
+  const n=3500,pos=new Float32Array(n*3),col=new Float32Array(n*3);
+  for(let i=0;i<n;i++){
+    const th=Math.random()*TAU, ph=Math.acos(2*Math.random()-1), R=200000;
+    pos[i*3]  =R*Math.sin(ph)*Math.cos(th);
+    pos[i*3+1]=R*Math.cos(ph);
+    pos[i*3+2]=R*Math.sin(ph)*Math.sin(th);
+    const b=.35+Math.random()*.65, warm=Math.random();
+    col[i*3]=b*(warm>.5?1:.85); col[i*3+1]=b*.92; col[i*3+2]=b*(warm>.5?.8:1);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  g.setAttribute('color',new THREE.BufferAttribute(col,3));
+  scene.add(new THREE.Points(g,new THREE.PointsMaterial({
+    size:1.6,sizeAttenuation:false,vertexColors:true,transparent:true,opacity:.95,depthWrite:false})));
+})();
+const sunSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:sunGlowTexture(),transparent:true,depthWrite:false}));
+sunSprite.position.copy(sunDir).multiplyScalar(180000);
+sunSprite.scale.set(9000,9000,1);
+scene.add(sunSprite);
+
+/* ==================== Malhas dos corpos ==================== */
+const meshes=[], picks=[null];
+
+const saturnMesh=new THREE.Mesh(
+  new THREE.SphereGeometry(BODIES[0].radius*SCALE,96,64),
+  new THREE.MeshStandardMaterial({map:saturnTexture(),roughness:1,metalness:0}));
+saturnMesh.scale.y=0.902;                                  // achatamento real ≈ 0,098
+saturnMesh.castShadow=true; saturnMesh.receiveShadow=true;
+saturnMesh.userData.idx=0;
+scene.add(saturnMesh); meshes.push(saturnMesh);
+
+const ringTex=ringTexture();
+const ringGeo=new THREE.RingGeometry(RING_IN_KM*SCALE,RING_OUT_KM*SCALE,360,1);
+{ // UVs radiais para a textura 1-D dos anéis
+  const pos=ringGeo.attributes.position, uv=ringGeo.attributes.uv;
+  const rin=RING_IN_KM*SCALE, rout=RING_OUT_KM*SCALE;
+  for(let i=0;i<pos.count;i++){
+    const X=pos.getX(i),Y=pos.getY(i);
+    uv.setXY(i,(Math.sqrt(X*X+Y*Y)-rin)/(rout-rin),0.5);
+  }
+}
+const ringMesh=new THREE.Mesh(ringGeo,new THREE.MeshStandardMaterial({
+  map:ringTex,transparent:true,side:THREE.DoubleSide,roughness:.95,metalness:0,depthWrite:false}));
+ringMesh.rotation.x=-Math.PI/2;
+ringMesh.receiveShadow=true; ringMesh.castShadow=true;
+ringMesh.customDepthMaterial=new THREE.MeshDepthMaterial({   // sombra dos anéis com alfa
+  depthPacking:THREE.RGBADepthPacking,map:ringTex,alphaTest:0.4});
+scene.add(ringMesh);
+
+const pickMat=new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false});
+pickMat.colorWrite=false;
+
+let HYP=-1;
+for(let k=1;k<N;k++){
+  const b=BODIES[k];
+  let tex;
+  if(b.name==='Titã')          tex=moonTexture('#cf8f3e',{craters:0,titan:true});
+  else if(b.name==='Encélado') tex=moonTexture('#edf2f5',{craters:60,shade:'rgba(120,140,160,.12)',light:'rgba(255,255,255,.25)',tiger:true});
+  else if(b.name==='Jápeto')   tex=moonTexture('#d9cfc0',{craters:120,twoTone:true});
+  else if(b.name==='Hipérion'){tex=moonTexture('#8d7a64',{craters:260,shade:'rgba(0,0,0,.3)'});HYP=k;}
+  else if(b.name==='Febe')     tex=moonTexture('#6b6966',{craters:220});
+  else                         tex=moonTexture(b.color,{craters:150});
+  const mat=new THREE.MeshStandardMaterial({map:tex,roughness:1,metalness:0});
+  if(b.name==='Encélado')mat.emissive=new THREE.Color('#0e1418');
+  const mesh=new THREE.Mesh(new THREE.SphereGeometry(1,40,24),mat);
+  const inner=b.a<600000;                                  // sombras só no sistema interno
+  mesh.castShadow=inner; mesh.receiveShadow=inner;
+  mesh.userData.idx=k;
+  if(b.name==='Titã'){
+    mesh.add(new THREE.Mesh(new THREE.SphereGeometry(1.07,32,20),
+      new THREE.MeshBasicMaterial({color:0xeaa75f,transparent:true,opacity:.16,depthWrite:false})));
+  }
+  scene.add(mesh); meshes.push(mesh);
+  const pick=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),pickMat);
+  pick.userData.idx=k;
+  scene.add(pick); picks.push(pick);
+}
+const pickables=[saturnMesh].concat(picks.slice(1));
+
+/* ==================== Trilhas orbitais ==================== */
+const TRAIL_MAX=900;
+const trailGroup=new THREE.Group(); scene.add(trailGroup);
+const trails=[null];
+for(let k=1;k<N;k++){
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array((TRAIL_MAX+1)*3),3));
+  g.setAttribute('color',   new THREE.BufferAttribute(new Float32Array((TRAIL_MAX+1)*3),3));
+  g.setDrawRange(0,0);
+  const line=new THREE.Line(g,new THREE.LineBasicMaterial({
+    vertexColors:true,transparent:true,opacity:.85,depthWrite:false}));
+  line.frustumCulled=false;
+  trailGroup.add(line);
+  trails.push({line,ring:new Float32Array(TRAIL_MAX*3),head:0,count:0,acc:0,base:new THREE.Color(BODIES[k].color)});
+}
+function recordTrail(k){
+  const t=trails[k],i=t.head*3;
+  t.ring[i]=P.x[k]*SCALE; t.ring[i+1]=P.y[k]*SCALE; t.ring[i+2]=P.z[k]*SCALE;
+  t.head=(t.head+1)%TRAIL_MAX;
+  if(t.count<TRAIL_MAX)t.count++;
+}
+function refreshTrail(t,live){
+  const n=t.count,g=t.line.geometry;
+  if(n===0){g.setDrawRange(0,0);return;}
+  const pa=g.attributes.position.array, ca=g.attributes.color.array;
+  const start=(t.head-n+TRAIL_MAX)%TRAIL_MAX;
+  for(let i=0;i<n;i++){
+    const s=((start+i)%TRAIL_MAX)*3, o=i*3;
+    pa[o]=t.ring[s];pa[o+1]=t.ring[s+1];pa[o+2]=t.ring[s+2];
+    const f=.06+.94*Math.pow((i+1)/(n+1),1.7);             // esmaecer a cauda
+    ca[o]=t.base.r*f;ca[o+1]=t.base.g*f;ca[o+2]=t.base.b*f;
+  }
+  const o=n*3;                                             // último ponto = posição atual
+  pa[o]=live.x;pa[o+1]=live.y;pa[o+2]=live.z;
+  ca[o]=t.base.r;ca[o+1]=t.base.g;ca[o+2]=t.base.b;
+  g.attributes.position.needsUpdate=true;
+  g.attributes.color.needsUpdate=true;
+  g.setDrawRange(0,n+1);
+}
+
+/* ==================== Órbitas keplerianas de referência ==================== */
+const orbitGroup=new THREE.Group(); scene.add(orbitGroup);
+for(let k=1;k<N;k++){
+  const b=BODIES[k], mu=G*(BODIES[0].mass+b.mass);
+  const pos=new Float32Array(257*3);
+  for(let s=0;s<=256;s++){
+    const st=elementsToState(mu,b.a,b.e,b.i,b.O,b.w,s/256*360);
+    pos[s*3]=st.x*SCALE; pos[s*3+1]=st.y*SCALE; pos[s*3+2]=st.z*SCALE;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const l=new THREE.Line(g,new THREE.LineBasicMaterial({
+    color:new THREE.Color(b.color),transparent:true,opacity:.16,depthWrite:false}));
+  l.frustumCulled=false;
+  orbitGroup.add(l);
+}
+
+/* ==================== Interface ==================== */
+const $=id=>document.getElementById(id);
+const panel=$('panel'), infocard=$('infocard'), icDot=$('icDot'), icName=$('icName'),
+      icType=$('icType'), icKv=$('icKv'), icFollow=$('icFollow'),
+      hTime=$('hTime'), hSpeed=$('hSpeed'), hStats=$('hStats'),
+      cbLabel=$('cbLabel'), labelLayer=$('labels');
+
+function speedFromSlider(v){return 60*Math.pow(10,v/100*4.86);}  // 1 min/s → ~50 dias/s
+const ui={speed:speedFromSlider(55), moonScale:10, paused:false};
+
+/* ---- câmera orbital com seguimento ---- */
+const cam={target:new THREE.Vector3(), r:760, theta:0.7, phi:1.15, followIdx:0};
+function visualRadius(k){
+  return k===0 ? BODIES[0].radius*SCALE
+               : Math.max(BODIES[k].radius*SCALE*ui.moonScale,0.55);
+}
+function applyCamera(){
+  if(cam.followIdx!=null)
+    cam.target.set(P.x[cam.followIdx]*SCALE,P.y[cam.followIdx]*SCALE,P.z[cam.followIdx]*SCALE);
+  const minR=(cam.followIdx!=null?visualRadius(cam.followIdx):1)*2.2+1.2;
+  cam.r=Math.min(Math.max(cam.r,minR),140000);
+  cam.phi=Math.min(Math.max(cam.phi,0.04),Math.PI-0.04);
+  const sp=Math.sin(cam.phi);
+  camera.position.set(
+    cam.target.x+cam.r*sp*Math.sin(cam.theta),
+    cam.target.y+cam.r*Math.cos(cam.phi),
+    cam.target.z+cam.r*sp*Math.cos(cam.theta));
+  camera.lookAt(cam.target);
+}
+
+let selected=null;
+function select(k){
+  selected=k;
+  document.querySelectorAll('#list .item').forEach((el,i)=>el.classList.toggle('sel',i===k));
+  if(k==null){infocard.classList.add('hidden');refreshFollowUI();return;}
+  const b=BODIES[k];
+  icDot.style.background=b.color; icDot.style.color=b.color;
+  icName.textContent=b.name; icType.textContent=b.type;
+  const rows=[['Massa',fmtExp(b.mass,'kg')],['Raio médio',fmtBR(b.radius,0)+' km']];
+  if(k>0){
+    rows.push(['Semieixo maior',fmtKm(b.a)]);
+    rows.push(['Excentricidade',fmtBR(b.e,4)]);
+    rows.push(['Inclinação',fmtBR(b.i,2)+'°']);
+    rows.push(['Período orbital',fmtBR(b.period/86400,2)+' dias']);
+    rows.push(['Distância a Saturno','<span id="icDist">—</span>']);
+    rows.push(['Velocidade orbital','<span id="icVel">—</span>']);
+  }else{
+    rows.push(['Achatamento','0,098']);
+    rows.push(['Rotação','10,7 horas']);
+    rows.push(['Luas simuladas','9']);
+  }
+  icKv.innerHTML=rows.map(r=>'<span>'+r[0]+'</span><b>'+r[1]+'</b>').join('');
+  infocard.classList.remove('hidden');
+  refreshFollowUI();
+}
+function follow(k){cam.followIdx=k;refreshFollowUI();}
+function focusOn(k){follow(k);cam.r=Math.max(visualRadius(k)*10,k===0?260:6);}
+function refreshFollowUI(){
+  document.querySelectorAll('#list .fw').forEach((el,i)=>el.classList.toggle('on',i===cam.followIdx));
+  icFollow.textContent=(selected!=null&&cam.followIdx===selected&&selected!==0)?'Parar de seguir':'Seguir';
+}
+
+function buildUI(){
+  const list=$('list');
+  BODIES.forEach((b,k)=>{
+    const it=document.createElement('div');it.className='item';
+    it.innerHTML='<span class="dot" style="background:'+b.color+';color:'+b.color+'"></span>'+
+      '<span class="nm">'+b.name+'</span>'+
+      '<span class="per">'+(k?fmtBR(b.period/86400,b.period<3*86400?2:1)+' d':'—')+'</span>';
+    const fw=document.createElement('button');
+    fw.className='fw';fw.textContent='◉';fw.title='Seguir com a câmera';
+    fw.addEventListener('click',e=>{e.stopPropagation();follow(cam.followIdx===k?0:k);});
+    it.appendChild(fw);
+    it.addEventListener('click',()=>select(k));
+    it.addEventListener('dblclick',()=>focusOn(k));
+    list.appendChild(it);
+
+    const lb=document.createElement('div');lb.className='label';
+    lb.innerHTML='<span class="dot" style="background:'+b.color+';color:'+b.color+'"></span>'+b.name;
+    lb.addEventListener('click',e=>{e.stopPropagation();select(k);});
+    lb.addEventListener('dblclick',e=>{e.stopPropagation();focusOn(k);});
+    labelLayer.appendChild(lb);
+    b.labelEl=lb;
+  });
+  $('rSpeed').addEventListener('input',e=>{
+    ui.speed=speedFromSlider(+e.target.value);$('oSpeed').textContent=fmtRate(ui.speed);});
+  $('oSpeed').textContent=fmtRate(ui.speed);
+  $('rScale').addEventListener('input',e=>{
+    ui.moonScale=+e.target.value;
+    $('oScale').textContent='×'+fmtBR(ui.moonScale,ui.moonScale%1?1:0);
+    updateScales();});
+  $('cbTrail').addEventListener('change',e=>trailGroup.visible=e.target.checked);
+  $('cbOrbit').addEventListener('change',e=>orbitGroup.visible=e.target.checked);
+  cbLabel.addEventListener('change',e=>labelLayer.style.display=e.target.checked?'':'none');
+  $('btnPause').addEventListener('click',togglePause);
+  $('btnView').addEventListener('click',resetView);
+  $('btnReset').addEventListener('click',resetSim);
+  $('icClose').addEventListener('click',()=>select(null));
+  icFollow.addEventListener('click',()=>{
+    if(selected==null)return;
+    follow(cam.followIdx===selected&&selected!==0?0:selected);});
+  $('icFocus').addEventListener('click',()=>{if(selected!=null)focusOn(selected);});
+  $('panelToggle').addEventListener('click',()=>panel.classList.toggle('open'));
+  addEventListener('keydown',e=>{
+    if(e.target.tagName==='INPUT')return;
+    if(e.code==='Space'){e.preventDefault();togglePause();}
+    else if(e.code==='KeyF'&&selected!=null)follow(selected);
+    else if(e.code==='Escape'){select(null);follow(0);}
+    else if(e.code==='KeyR')resetView();
+  });
+  setTimeout(()=>{$('hint').style.opacity='0';},14000);
+}
+function togglePause(){
+  ui.paused=!ui.paused;
+  $('btnPause').innerHTML=ui.paused?'▶ Continuar':'⏸ Pausar';
+  updateHUD();
+}
+function resetView(){follow(0);cam.r=760;cam.theta=0.7;cam.phi=1.15;}
+function resetSim(){
+  initBodies();
+  saturnMesh.rotation.y=0;
+  trails.forEach(t=>{if(t){t.head=0;t.count=0;t.acc=0;t.line.geometry.setDrawRange(0,0);}});
+  updateHUD();
+}
+function updateScales(){
+  for(let k=1;k<N;k++){
+    const r=visualRadius(k);
+    meshes[k].scale.setScalar(r);
+    picks[k].scale.setScalar(r*1.7+3.5);
+  }
+}
+
+/* ---- ponteiro: orbitar, mover, zoom, pinça, clique ---- */
+const dom=renderer.domElement;
+const pts=new Map();
+let multi=false, movedTot=0, downBtn=0, camPinch=0;
+let lastClick={t:0,idx:-2};
+const ray=new THREE.Raycaster(), ndc=new THREE.Vector2();
+
+dom.addEventListener('pointerdown',e=>{
+  dom.setPointerCapture(e.pointerId);
+  pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pts.size===1){movedTot=0;downBtn=e.button;}
+  else{multi=true;
+    const a=[...pts.values()];
+    camPinch=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);}
+  if(innerWidth<=760)panel.classList.remove('open');
+});
+dom.addEventListener('pointermove',e=>{
+  const p=pts.get(e.pointerId);if(!p)return;
+  const dx=e.clientX-p.x, dy=e.clientY-p.y;
+  p.x=e.clientX;p.y=e.clientY;
+  if(pts.size===2){
+    const a=[...pts.values()];
+    const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+    if(camPinch>0&&d>0)cam.r*=camPinch/d;
+    camPinch=d;return;
+  }
+  if(pts.size!==1)return;
+  movedTot+=Math.abs(dx)+Math.abs(dy);
+  if(downBtn===2||e.shiftKey){                              // mover (pan)
+    const f=cam.r*0.0011;
+    const right=new THREE.Vector3().setFromMatrixColumn(camera.matrix,0);
+    const up=new THREE.Vector3().setFromMatrixColumn(camera.matrix,1);
+    cam.target.addScaledVector(right,-dx*f).addScaledVector(up,dy*f);
+    if(cam.followIdx!=null){cam.followIdx=null;refreshFollowUI();}
+  }else{cam.theta-=dx*0.005;cam.phi-=dy*0.005;}             // orbitar
+});
+function endPointer(e){
+  pts.delete(e.pointerId);
+  if(pts.size===0){
+    if(!multi&&downBtn===0&&movedTot<6)handleClick(e.clientX,e.clientY);
+    multi=false;camPinch=0;
+  }else if(pts.size<2)camPinch=0;
+}
+dom.addEventListener('pointerup',endPointer);
+dom.addEventListener('pointercancel',endPointer);
+dom.addEventListener('contextmenu',e=>e.preventDefault());
+dom.addEventListener('wheel',e=>{e.preventDefault();cam.r*=Math.exp(e.deltaY*0.0012);},{passive:false});
+
+function handleClick(cx,cy){
+  ndc.set(cx/innerWidth*2-1,-(cy/innerHeight)*2+1);
+  ray.setFromCamera(ndc,camera);
+  const hit=ray.intersectObjects(pickables,false)[0];
+  const idx=hit?hit.object.userData.idx:null;
+  const now=performance.now();
+  if(idx!=null){
+    if(idx===lastClick.idx&&now-lastClick.t<350)focusOn(idx);  // duplo clique
+    else select(idx);
+  }
+  lastClick={t:now,idx:idx};
+}
+
+/* ---- rótulos projetados ---- */
+const projV=new THREE.Vector3();
+function updateLabels(){
+  let satX=0,satY=0,satVis=false;
+  for(let k=0;k<N;k++){
+    const b=BODIES[k];
+    projV.set(P.x[k]*SCALE,P.y[k]*SCALE,P.z[k]*SCALE).project(camera);
+    const vis=projV.z<1&&projV.z>-1;
+    const sx=(projV.x*.5+.5)*innerWidth, sy=(-projV.y*.5+.5)*innerHeight;
+    if(k===0){satX=sx;satY=sy;satVis=vis;}
+    let show=vis;
+    if(k>0&&satVis){
+      const ddx=sx-satX,ddy=sy-satY;
+      if(ddx*ddx+ddy*ddy<32*32)show=false;                  // evita amontoado sobre Saturno
+    }
+    b.labelEl.style.display=show?'block':'none';
+    if(show){b.labelEl.style.left=sx+'px';b.labelEl.style.top=sy+'px';}
+    b.labelEl.classList.toggle('sel',k===selected);
+  }
+}
+
+/* ---- HUD e dados ao vivo ---- */
+function updateHUD(){
+  hTime.textContent='T+ '+fmtTime(simTime);
+  hSpeed.textContent=ui.paused?'pausado':fmtRate(ui.speed);
+  const E=energy(), drift=Math.abs((E-E0)/E0)*100;
+  hStats.textContent='\u0394E '+fmtSci(drift)+'% \u00b7 '+Math.round(fps)+' fps';
+  if(selected!=null&&selected>0){
+    const k=selected;
+    const dx=P.x[k]-P.x[0],dy=P.y[k]-P.y[0],dz=P.z[k]-P.z[0];
+    const vx=P.vx[k]-P.vx[0],vy=P.vy[k]-P.vy[0],vz=P.vz[k]-P.vz[0];
+    const eDist=$('icDist'),eVel=$('icVel');
+    if(eDist)eDist.textContent=fmtKm(Math.sqrt(dx*dx+dy*dy+dz*dz));
+    if(eVel)eVel.textContent=fmtBR(Math.sqrt(vx*vx+vy*vy+vz*vz),2)+' km/s';
+  }
+}
+
+/* ==================== Laço principal ==================== */
+const DT_BASE=60, DT_MAX=180, MAX_STEPS=6000;   // Δt em segundos simulados
+let last=performance.now(), fps=60, hudT=0;
+
+function tick(now){
+  requestAnimationFrame(tick);
+  const dtr=Math.min((now-last)/1000,0.05); last=now;
+  if(dtr>0)fps+=(1/Math.max(dtr,1e-3)-fps)*0.05;
+
+  if(!ui.paused&&dtr>0){
+    const simDt=ui.speed*dtr;
+    let dt=DT_BASE, steps=Math.ceil(simDt/dt);
+    if(steps>MAX_STEPS){
+      dt=Math.min(simDt/MAX_STEPS,DT_MAX);
+      steps=Math.min(Math.ceil(simDt/dt),MAX_STEPS);
+    }
+    const interval=[0];
+    for(let k=1;k<N;k++)interval[k]=Math.max(BODIES[k].period/700,simDt/280);
+    for(let s=0;s<steps;s++){
+      stepLeapfrog(dt);
+      simTime+=dt;
+      for(let k=1;k<N;k++){
+        const t=trails[k];t.acc+=dt;
+        if(t.acc>=interval[k]){t.acc=0;recordTrail(k);}
+      }
+    }
+  }
+
+  for(let k=0;k<N;k++){
+    meshes[k].position.set(P.x[k]*SCALE,P.y[k]*SCALE,P.z[k]*SCALE);
+    if(k>0)picks[k].position.copy(meshes[k].position);
+  }
+  ringMesh.position.copy(meshes[0].position);
+  orbitGroup.position.copy(meshes[0].position);
+  saturnMesh.rotation.y=simTime/38520*TAU;                  // rotação de 10,7 h
+  for(let k=1;k<N;k++){
+    if(k===HYP){                                            // tombamento caótico de Hipérion
+      meshes[k].rotation.x+=0.43*dtr;meshes[k].rotation.y+=0.31*dtr;
+    }else meshes[k].lookAt(meshes[0].position);             // acoplamento de maré
+  }
+
+  if(trailGroup.visible)for(let k=1;k<N;k++)refreshTrail(trails[k],meshes[k].position);
+  applyCamera();
+  if(cbLabel.checked)updateLabels();
+  hudT+=dtr;
+  if(hudT>0.25){hudT=0;updateHUD();}
+  renderer.render(scene,camera);
+}
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+/* ==================== Início ==================== */
+initBodies();
+buildUI();
+updateScales();
+select(null);
+resetView();
+updateHUD();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
