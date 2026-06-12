@@ -4,7 +4,6 @@ Simulação interativa do sistema de Saturno que roda inteiramente no navegador,
 
 **▶ Acesse a simulação:** https://guilhermedrummondcouto.github.io/saturno/
 
-> Substitua `SEU_USUARIO` acima pelo seu nome de usuário do GitHub depois de publicar.
 
 ## Destaques
 
@@ -71,6 +70,5 @@ Basta abrir o `index.html` em qualquer navegador moderno (é necessária conexã
 - Renderização 3D: [Three.js](https://threejs.org) (licença MIT).
 - Dados orbitais: NASA/JPL Solar System Dynamics (valores aproximados).
 - Texturas do planeta, dos anéis e das luas geradas proceduralmente em canvas.
-- Código criado com [Claude](https://claude.com) (Anthropic).
 
 Este projeto é distribuído sob a licença MIT — sinta-se livre para usar, modificar e compartilhar.
